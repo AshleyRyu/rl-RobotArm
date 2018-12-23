@@ -319,6 +319,30 @@ observation, _reward, done, _info = self.step(np.zeros(self.model.nu))
 27
 ```
 
+```python
+#아래 코드는 mujoco에서 제공하는 샘프로 코드 humanoid임... gym과는 다름... ㅠ ㅠ 
+import mujoco_py
+import os
+mj_path, _ = mujoco_py.utils.discover_mujoco()
+xml_path = os.path.join(mj_path, 'model', 'humanoid.xml')
+model = mujoco_py.load_model_from_path(xml_path)
+sim = mujoco_py.MjSim(model)
+
+print(sim.data.qpos)
+# [0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]
+
+sim.step()
+print(sim.data.qpos)
+# [-2.09531783e-19  2.72130735e-05  6.14480786e-22 -3.45474715e-06
+#   7.42993721e-06 -1.40711141e-04 -3.04253586e-04 -2.07559344e-04
+#   8.50646247e-05 -3.45474715e-06  7.42993721e-06 -1.40711141e-04
+#  -3.04253586e-04 -2.07559344e-04 -8.50646247e-05  1.11317030e-04
+#  -7.03465386e-05 -2.22862221e-05 -1.11317030e-04  7.03465386e-05
+#  -2.22862221e-05]
+
+
+```
+
 
 
 ##  Gym 환경
@@ -441,6 +465,210 @@ array([-0.01354274,  0.09147245,  0.01138785,  0.04450717,  0.06320186,
        -0.00306638, -0.21058064])
 >>> len(env4.reset())
 17
+```
+
+
+
+```html
+<compiler angle="radian" coordinate="local" inertiafromgeom="true" settotalmass="14"/>
+```
+
+라디안 단위의 앵글 사용, 직각좌표계 사용
+
+```html
+  <default>
+    <joint armature=".1" damping=".01" limited="true" solimplimit="0 .8 .03" solreflimit=".02 1" stiffness="8"/>
+    <geom conaffinity="0" condim="3" contype="1" friction=".4 .1 .1" rgba="0.8 0.6 .4 1" solimp="0.0 0.8 0.01" solref="0.02 1"/>
+    <motor ctrllimited="true" ctrlrange="-1 1"/>
+  </default>
+```
+
+default 값은 - 
+
+```python
+>>> env2.step(1)
+(array([ 0.06564904, -0.0929163 ,  0.24385769,  0.29318351,  0.33469796,
+        0.30338688,  0.22153364,  0.25048561,  1.45700757, -1.06580746,
+       -2.81455293,  9.48865455,  7.03090576,  9.46484916,  8.72155794,
+        8.36623684,  5.21930428]), 0.9867045633683121, False, {'reward_run': 1.0867045633683121, 'reward_ctrl': -0.1})
+>>> env2.step(2)
+(array([-0.08439401, -0.20258574,  0.65312413,  0.65847164,  0.63724025,
+        0.72622202,  0.8565884 ,  0.5151336 , -0.13310376, -1.31438361,
+        0.65543312, -3.44283725,  0.34697721, -2.47633232, -0.88667629,
+        0.82038081, -0.12822246]), -0.32865025571052386, False, {'reward_run': 0.07134974428947616, 'reward_ctrl': -0.4})
+
+## Init policy할 때 쓰이는
+# Initialize policy
+	if args.policy_name == "TD3": policy = TD3.TD3(state_dim, action_dim, max_action)
+	elif args.policy_name == "OurDDPG": policy = OurDDPG.DDPG(state_dim, action_dim, max_action)
+	elif args.policy_name == "DDPG": policy = DDPG.DDPG(state_dim, action_dim, max_action)
+##
+
+>>> env.observation_space
+Dict(achieved_goal:Box(3,), desired_goal:Box(3,), observation:Box(10,)) #box 오브젝트 형식
+>>> env2.action_space
+Box(6,)
+>>> env2.action_space.high
+array([1., 1., 1., 1., 1., 1.], dtype=float32)
+
+## random action 취할 시 이용하는 .sample()
+>>> env2.action_space.sample()
+array([ 0.09762701,  0.43037874,  0.20552675,  0.08976637, -0.1526904 ,
+        0.29178822], dtype=float32)
+```
+
+```python
+# TD3에서 쓰는 HalfCheetah env
+# openai/gym/gym/envs/mujoco/half_cheetah.py
+import numpy as np
+from gym import utils
+from gym.envs.mujoco import mujoco_env
+
+class HalfCheetahEnv(mujoco_env.MujocoEnv, utils.EzPickle):
+    def __init__(self):
+        mujoco_env.MujocoEnv.__init__(self, 'half_cheetah.xml', 5)
+        utils.EzPickle.__init__(self)
+
+    def step(self, action):
+        xposbefore = self.sim.data.qpos[0]
+        self.do_simulation(action, self.frame_skip)
+        xposafter = self.sim.data.qpos[0]
+        ob = self._get_obs()
+        reward_ctrl = - 0.1 * np.square(action).sum()
+        reward_run = (xposafter - xposbefore)/self.dt
+        reward = reward_ctrl + reward_run
+        done = False
+        return ob, reward, done, dict(reward_run=reward_run, reward_ctrl=reward_ctrl)
+
+    def _get_obs(self):
+        return np.concatenate([
+            self.sim.data.qpos.flat[1:],
+            self.sim.data.qvel.flat,
+        ])
+
+    def reset_model(self):
+        qpos = self.init_qpos + self.np_random.uniform(low=-.1, high=.1, size=self.model.nq)
+        qvel = self.init_qvel + self.np_random.randn(self.model.nv) * .1
+        self.set_state(qpos, qvel)
+        return self._get_obs()
+
+    def viewer_setup(self):
+        self.viewer.cam.distance = self.model.stat.extent * 0.5
+```
+
+그래서 한번 해봤습니다..
+
+
+
+```python
+>>> def evaluate_policy(policy, eval_episodes=10):
+...     avg_reward = 0.
+...     for _ in range(eval_episodes):
+...             obs = env.reset()
+...             done = False
+...             while not done:
+...                     action = policy.select_action(np.array(obs))
+...                     obs, reward, done, _ = env.step(action)
+...                     avg_reward += reward
+...     avg_reward /= eval_episodes
+...     print ("---------------------------------------")
+...     print ("Evaluation over: ", eval_episodes , "episodes: ", avg_reward)
+...     print ("---------------------------------------")
+...     return avg_reward
+...
+>>> seed = 0
+>>> env = gym.make('HalfCheetah-v2')
+>>> env.seed(seed)
+[0]
+>>> torch.manual_seed(seed)
+<torch._C.Generator object at 0x10b600ad0>
+>>> np.random.seed(seed)
+>>> state_dim = env.observation_space.shape[0]
+>>> action_dim = env.action_space.shape[0]
+>>> max_action = float(env.action_space.high[0])
+>>> print(state_dim)
+17
+>>> print(action_dim)
+6
+>>> print(max_action)
+1.0
+>>> print(env.observation_space)
+Box(17,)
+>>> type(env.observation_space)
+<class 'gym.spaces.box.Box'>
+>>> type(env.action_space)
+<class 'gym.spaces.box.Box'>
+>>> print(env.action_space)
+Box(6,)
+>>> print(env.action_space.high)
+[1. 1. 1. 1. 1. 1.]
+
+>>> print(replay_buffer)
+<utils.ReplayBuffer object at 0x10ece3cf8>
+>>> policy = TD3.TD3(state_dim, action_dim, max_action)
+>>> evaluations = [evaluate_policy(policy)]
+---------------------------------------
+Evaluation over:  10 episodes:  -1.418249014019275
+---------------------------------------
+```
+
+그래서 box가 궁금했습니다..
+
+
+
+```python
+import numpy as np
+
+import gym
+from gym import logger
+
+class Box(gym.Space):
+    """
+    A box in R^n.
+    I.e., each coordinate is bounded.
+    Example usage:
+    self.action_space = spaces.Box(low=-10, high=10, shape=(1,))
+    """
+    def __init__(self, low=None, high=None, shape=None, dtype=None):
+        """
+        Two kinds of valid input:
+            Box(low=-1.0, high=1.0, shape=(3,4)) # low and high are scalars, and shape is provided
+            Box(low=np.array([-1.0,-2.0]), high=np.array([2.0,4.0])) # low and high are arrays of the same shape
+        """
+        if shape is None:
+            assert low.shape == high.shape
+            shape = low.shape
+        else:
+            assert np.isscalar(low) and np.isscalar(high)
+            low = low + np.zeros(shape)
+            high = high + np.zeros(shape)
+        if dtype is None:  # Autodetect type
+            if (high == 255).all():
+                dtype = np.uint8
+            else:
+                dtype = np.float32
+            logger.warn("gym.spaces.Box autodetected dtype as {}. Please provide explicit dtype.".format(dtype))
+        self.low = low.astype(dtype)
+        self.high = high.astype(dtype)
+        gym.Space.__init__(self, shape, dtype)
+
+    def sample(self):
+        return gym.spaces.np_random.uniform(low=self.low, high=self.high + (0 if self.dtype.kind == 'f' else 1), size=self.low.shape).astype(self.dtype)
+
+    def contains(self, x):
+        return x.shape == self.shape and (x >= self.low).all() and (x <= self.high).all()
+
+    def to_jsonable(self, sample_n):
+        return np.array(sample_n).tolist()
+
+    def from_jsonable(self, sample_n):
+        return [np.asarray(sample) for sample in sample_n]
+
+    def __repr__(self):
+        return "Box" + str(self.shape)
+
+    def __eq__(self, other):
+        return np.allclose(self.low, other.low) and np.allclose(self.high, other.high)
 ```
 
 
